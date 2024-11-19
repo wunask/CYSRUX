@@ -11,13 +11,16 @@ from datetime import datetime
 import qrcode  # Import QR code library
 import webbrowser  # Import for opening the QR code image
 import requests
-'''import telegram
-from telegram.ext import Updater, CommandHandler'''
+import requests
+import openai
+import time
+import json
+
 
 
 # Configure logging
 logging.basicConfig(
-    filename='/var/log/scan_to_pdf.log',
+    filename='/var/www/html/logs/scan.txt',
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
@@ -89,8 +92,12 @@ def extract_cve_and_references(json_data):
                     cve_matches = re.findall(r'\bCVE-\d{4}-\d{1,7}\b', vulns)
                     url_matches = re.findall(r'http[s]?://\S+', vulns)
 
-                    service_info['cves'] = list(set(cve_matches))  # All CVEs
-                    service_info['references'] = list(set(url_matches))  # All URLs
+                    unique_cves = list(set(cve_matches))
+                    first_reference = url_matches[0] if url_matches else None  # Pick the first URL or None
+
+                    service_info['cves'] = unique_cves  # All unique CVEs
+                    service_info['references'] = [first_reference] if first_reference else []  # Only one reference
+
                     del service_info['script']['vulners']
 
 def extract_and_save_cve_references(json_data, cve_file_path):
@@ -346,10 +353,7 @@ def create_html_report(cve_file_path, html_file_path, qr_code_path):
     except IOError as e:
         logging.error(f"Failed to create HTML report at {html_file_path}: {e}")
         print(f"Error: Could not create HTML report due to: {e}")
-import requests
-import qrcode
-import netifaces as ni
-from PIL import Image
+
 
 # Function to get Raspberry Pi's IP address and send it along with QR code to Telegram
 '''def send_ip_and_qr_to_telegram(bot_token, chat_id):
@@ -391,7 +395,14 @@ bot_token = '7220476758:AAF-ub9SlYlCVYqUNGHkR0Ex8lK3bpzRImw'
 chat_id = '911566955'''
 
 # Call the single function to send the IP and QR code
+def calculate_cidr_from_subnet_mask(subnet_mask):
+    if not subnet_mask:
+        print("Error: No subnet mask provided.")
+        return None
 
+    # Calculate the CIDR value based on the subnet mask
+    cidr = sum(bin(int(octet)).count('1') for octet in subnet_mask.split('.'))
+    return cidr
 
 if __name__ == '__main__':
     logging.info("Starting the scanning process...")
@@ -400,7 +411,8 @@ if __name__ == '__main__':
     # Get local IP and subnet
     local_ip, subnet_mask = get_local_ip_and_subnet()
     if local_ip and subnet_mask:
-        target = local_ip + "/24"
+        cidr = calculate_cidr_from_subnet_mask(subnet_mask)  # Calculate CIDR dynamically
+        target = local_ip + f"/{cidr}"  
     else:
         logging.warning("Could not retrieve local IP or subnet mask, defaulting to scanme.nmap.org.")
         print("Warning: Could not retrieve local IP or subnet mask, defaulting to scanme.nmap.org.")
@@ -485,10 +497,7 @@ if __name__ == '__main__':
     logging.info(f"Total time taken: {duration:.2f} seconds")
     print(f"Total time taken: {duration:.2f} seconds")
 
-import requests
-import openai
-import time
-import json
+
 
 # Set your OpenAI API key
 openai.api_key = ''
@@ -506,7 +515,7 @@ def get_cve_info(cve_id):
 
 # Generate mitigation steps using GPT-4
 def generate_solution(prompt):
-    retry_attempts = 5
+    retry_attempts = 3
     for attempt in range(retry_attempts):
         try:
             response = openai.ChatCompletion.create(
