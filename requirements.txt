@@ -1,0 +1,6 @@
+nmap
+pandas
+netifaces
+qrcode
+requests
+openai
